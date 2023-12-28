@@ -28,7 +28,25 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     steps:
-      - name: Deploy to Production
+      - name: Deploy to GitHub Releases
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          ssh user@your-server-ip "cd /path/to/your/app && git pull origin main && composer install 
---no-interaction --prefer-dist && php artisan migrate --force && php artisan optimize"
+          # Créez une nouvelle release
+          release_version=$(date +'%Y%m%d%H%M%S')
+          git tag $release_version
+          git push origin $release_version
+
+          # Ajoutez des fichiers à la release (remplacez avec vos propres fichiers à déployer)
+          zip -r deployment-package.zip path/to/your/files
+          asset_url=$(curl -sS --header "Authorization: Bearer $GITHUB_TOKEN" --data-binary "@deployment-package.zip" -H "Content-Type: application/zip" "https://uploads.github.com/repos/${{ github.repository }}/releases/${{ github.run_id }}/assets?name=deployment-package.zip" | jq -r '.url')
+
+          # Attendez que l'upload soit terminé
+          upload_status=""
+          while [[ "$upload_status" != "uploaded" ]]; do
+            upload_status=$(curl -sS --header "Authorization: Bearer $GITHUB_TOKEN" "$asset_url" | jq -r '.state')
+            sleep 5
+          done
+          
+          # Ajoutez un commentaire à la release
+          curl -sS --header "Authorization: Bearer $GITHUB_TOKEN" --request POST --data '{"body":"Deployment successful!"}' "https://api.github.com/repos/${{ github.repository }}/releases/${{ github.run_id }}/comments"
